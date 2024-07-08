@@ -1,0 +1,59 @@
+## NAME: Kamaldhari Infotech
+## Project: AXL_Dashboard
+## 03 july 2024
+## Divyesh Tailor
+
+stages:
+  - Package
+  - Deploy
+  
+### Package ###
+Package-Production:
+  stage: Package
+  variables:
+    CI_REGISTRY_USER: $Docker_Hub_User_Name
+    CI_REGISTRY_PASSWORD: $Docker_Hub_PAT_Token
+    CI_REGISTRY: docker.io
+    CI_REGISTRY_IMAGE: index.docker.io/adminkamaldhari/axl-dashboard
+
+  environment:
+    name: Production
+    url: https://axl-dashboard.webcase.me
+  before_script:
+    - docker system prune -a --force
+    # - echo "Decrypting secret and saving to .env"
+    # - echo "$PROD_ENV_FILE" | base64 -d > .env 
+    - echo "$CI_REGISTRY_PASSWORD" | docker login -u "$CI_REGISTRY_USER" --password-stdin "$CI_REGISTRY"
+  script:
+    - docker rmi --force $CI_REGISTRY_IMAGE:$CI_REGISTRY_IMAGE_PROD_TAG
+    - docker build -t $CI_REGISTRY_IMAGE:$CI_REGISTRY_IMAGE_PROD_TAG .
+    - docker push $CI_REGISTRY_IMAGE:$CI_REGISTRY_IMAGE_PROD_TAG
+    - docker rmi --force $CI_REGISTRY_IMAGE:$CI_REGISTRY_IMAGE_PROD_TAG
+  when: on_success
+  tags:
+    - shell 
+  only:
+    - master
+
+### Deploy ###
+Deploy-Production:
+  stage: Deploy
+  environment:
+    name: Production
+    url: https://axl-dashboard.webcase.me
+  before_script:
+    - 'command -v ssh-agent >/dev/null || ( apt-get update -y && apt-get install openssh-client -y )'
+    - eval $(ssh-agent -s)
+    - echo "$RUNNER_SERVER_PRIV_KEY" | tr -d '\r' | ssh-add -
+    - mkdir -p ~/.ssh
+    - chmod 700 ~/.ssh
+    - echo "$DEV_SSH_KNOWN_HOSTS" > ~/.ssh/known_hosts
+    - chmod 644 ~/.ssh/known_hosts
+  script:
+    - ssh $PRODUCTION_SERVER_USER@$PRODUCTION_SERVER_IP "docker stop index.docker.io/adminkamaldhari/axl-dashboard:production && docker rm index.docker.io/adminkamaldhari/axl-dashboard:production && docker rmi index.docker.io/adminkamaldhari/axl-dashboard:production || true"
+    - ssh $PRODUCTION_SERVER_USER@$PRODUCTION_SERVER_IP "bash /root/RM-Prod-axl-dashboard.sh"
+    - ssh $PRODUCTION_SERVER_USER@$PRODUCTION_SERVER_IP "docker system prune -a --force && docker run -d -t -p 3006:80 --name "axl-dashboard" index.docker.io/adminkamaldhari/axl-dashboard:production"
+  tags:
+    - shell 
+  only:
+    - master
